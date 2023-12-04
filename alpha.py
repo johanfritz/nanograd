@@ -49,19 +49,13 @@ class nano:
         return self * other
 
     def __pow__(self, other) -> "nano":
-        if type(other) != nano:
-            other = nano(other)
-        out = nano(self.value**other.value, p=(self, other))
+        out = nano(self.value**other, p=(self,))
 
         def _back():
-            self.grad += other.value * self.value ** (other.value - 1) * out.grad
-            other.grad += math.log(self.value) * self.value**other.value * out.grad
+            self.grad += other * self.value ** (other - 1) * out.grad
 
         out._backward = _back
         return out
-
-    def __rpow__(self, other):
-        return nano(other) ** self
 
     def relu(self) -> "nano":
         out = nano(self.value * (self.value > 0), p=(self,))
@@ -122,11 +116,17 @@ class nanoNeuron:
         if len(self.weights) != len(n):
             raise IndexError("Input size not matching")
         out = sum((w * x for w, x in zip(self.weights, n)), self.bias)
-        return out.relu() if self.act == "relu" else out
+        return (
+            out.relu()
+            if self.act == "relu"
+            else out.sigmoid()
+            if self.act == "sigmoid"
+            else out
+        )
 
     def zero_grad(self):
-        for n in self.weights + [self.bias]:
-            n.grad = 0
+        for w in self.weights + [self.bias]:
+            w.grad = 0
 
 
 class nanoLayer:
@@ -140,7 +140,22 @@ class nanoLayer:
     def __repr__(self):
         return f"nanoLayer {len(self.neurons[0].weights)} -> {len(self.neurons)} with function {self.act}"
 
+    def zero_grad(self):
+        for n in self.neurons:
+            n.zero_grad
+
 
 class nanoModel:
-    def __init__(self, layers):
-        
+    def __init__(self, nin, layers):
+        sizes=[nin]+layers
+        self.layers=[nanoLayer(sizes[k], sizes[k+1]) for k in range(len(sizes)-1)]
+        self.layers.append(nanoLayer(sizes[len(sizes)-2], sizes[len(sizes)-2], fun="sigmoid"))
+    def __repr__(self):
+        return f"nanoModel {self.layers}"
+    def __call__(self, x):
+        for layer in self.layers:
+            x=layer(x)
+        return x
+    def zero_grad(self):
+        for layer in self.layers:
+            layer.zero_grad
