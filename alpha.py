@@ -142,20 +142,136 @@ class nanoLayer:
 
     def zero_grad(self):
         for n in self.neurons:
-            n.zero_grad
+            n.zero_grad()
+
+    def params(self):
+        return self.neurons
 
 
 class nanoModel:
     def __init__(self, nin, layers):
-        sizes=[nin]+layers
-        self.layers=[nanoLayer(sizes[k], sizes[k+1]) for k in range(len(sizes)-1)]
-        self.layers.append(nanoLayer(sizes[len(sizes)-2], sizes[len(sizes)-2], fun="sigmoid"))
+        sizes = [nin] + layers
+        self.layers = [nanoLayer(sizes[k], sizes[k + 1]) for k in range(len(sizes) - 2)]
+        self.layers.append(
+            nanoLayer(sizes[len(sizes) - 2], sizes[len(sizes) - 1], fun="sigmoid")
+        )
+
     def __repr__(self):
-        return f"nanoModel {self.layers}"
+        out = "nanoModel: \n"
+        for layer in self.layers:
+            out += str(layer) + "\n"
+        return out
+
     def __call__(self, x):
         for layer in self.layers:
-            x=layer(x)
+            x = layer(x)
         return x
+
     def zero_grad(self):
         for layer in self.layers:
-            layer.zero_grad
+            layer.zero_grad()
+
+    def train(self, x, y, lr, lossfunc="mse"):
+        pred = self(x)
+        L = MSE(pred, y) if lossfunc == "mse" else nano(0)
+        self.zero_grad()
+        L.backward()
+
+
+def MSE(p: list[nano], y: list[nano]) -> "nano":
+    return sum((pi - yi) ** 2 for pi, yi in zip(p, y))
+
+
+class nanoArray:
+    def __init__(self, size, default):
+        default = float(default)
+        if isinstance(size, int):
+            size = (1, size)
+            self.dims = 1
+        elif isinstance(size, tuple):
+            self.dims = len(size) - 1 * (size[0] == 1)
+        if len(size) not in [1, 2]:
+            raise IndexError("Illegal size in nanoArray __init__")
+        self.data = [default for _ in range(size[0] * size[1])]
+        self.shape = size
+
+    def __getitem__(self, index):
+        if isinstance(index, int) and self.dims == 1:
+            return self.data[index]
+        elif isinstance(index, int) and self.dims == 2:
+            return self.data[self.shape[1] * (index) : self.shape[1] * (index + 1)]
+        elif isinstance(index, tuple) and len(index) == 2 and self.dims == 2:
+            return self.data[self.shape[1] * index[0] + index[1]]
+        raise IndexError("Illegal index in __getitem__")
+
+    def __setitem__(self, index, val):
+        if self.dims == 1:
+            if isinstance(index, int):
+                self.data[index] = float(val)
+                return
+            raise IndexError("Illegal index in __setitem__ for onedimensional array")
+        if self.dims == 2:
+            if isinstance(index, tuple) and len(index) == 2:
+                self.data[self.shape[1] * index[0] + index[1]] = float(val)
+                return
+            elif isinstance(index, int) and len(val) == self.shape[1]:
+                self.data[self.shape[1] * index : self.shape[1] * (index + 1)] = [
+                    float(x) for x in val
+                ]
+                return
+            raise ValueError("Illegal value in __setitem__ for twodimensional array")
+        raise IndexError("Illegal dimensions in __setitem__")
+
+    def __repr__(self):
+        s = f"nanoArray: {self.shape}\n"
+        if self.dims == 1:
+            return s + str(self.data)
+        s += "["
+        for k in range(self.shape[0]):
+            s += str(self.data[self.shape[1] * k : self.shape[1] * (k + 1)]) + "\n"
+        return s + "]"
+
+    def __len__(self):
+        return self.shape[0] if self.dims == 2 else self.shape[1]
+
+    def __add__(self, other):  
+        if isinstance(other, (int, float)):
+            other = nanoArray(self.shape, other)
+        if self.shape!=other.shape:
+            raise Exception("Sizes not matching in __add__")
+        out = nanoArray(self.shape, 0)
+        for k in range(self.shape[0]):
+            out.data[k * self.shape[1] : (k + 1) * (self.shape[1])] = [
+                self.data[k * self.shape[1] + l] + other.data[k * self.shape[1] + l]
+                for l in range(self.shape[1])
+            ]
+        return out
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            other = nanoArray(self.shape, other)
+        if self.shape != other.shape:
+            raise Exception("Sizes not matching in __mul__")
+        out = nanoArray(self.shape, 0.0)
+        for k in range(self.shape[0]):
+            out.data[k * (self.shape[1]) : k * (self.shape[1] + 1)] = [
+                self.data[k * self.shape[1] + l] * other.data[k * self.shape[1] + l]
+                for l in range(self.shape[1])
+            ]
+        return out
+        
+
+
+def ones(size) -> "nanoArray":
+    return nanoArray(size, 1.0)
+
+
+def zeros(size) -> "nanoArray":
+    return nanoArray(size, 0.0)
+
+
+def unit(size: int) -> "nanoArray":
+    out = nanoArray((size, size), 0.0)
+    for k in range(size):
+        out[k, k] = 1.0
+    return out
